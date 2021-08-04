@@ -1,6 +1,6 @@
 #include <cuda.h>
 #include <stdio.h>
-
+#include <string.h>
 
 #define _QUEENS_BLOCK_SIZE_ 	128
 #define _VAZIO_      -1
@@ -28,6 +28,32 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
    }
+}
+
+bool MCstillLegal(const char *board, const int r){
+  register int i;
+  register int ld;
+  register int rd;
+  // Check vertical
+  for ( i = 0; i < r; ++i)
+    if (board[i] == board[r]) return false;
+    // Check diagonals
+    ld = board[r];  //left diagonal columns
+    rd = board[r];  // right diagonal columns
+    for ( i = r-1; i >= 0; --i) {
+      --ld; ++rd;
+      if (board[i] == ld || board[i] == rd) return false;
+    }
+
+    return true;
+}
+
+void prefixesHandleSol(QueenRoot *root_prefixes,unsigned int flag,char *board,int initialDepth,int num_sol){
+
+    root_prefixes[num_sol].flag = flag;
+
+    for(int i = 0; i<initialDepth;++i)
+      root_prefixes[num_sol].board[i] = (char)board[i];
 }
 
 
@@ -122,7 +148,7 @@ __global__ void BP_queens_root_dfs(int N, unsigned int nPreFixos, int depthPreFi
             vertice[i] = _VAZIO_;
         }
 
-        flag = root_prefixes[idx].control;
+        flag = root_prefixes[idx].flag;
 
         #pragma unroll 2
         for (i = 0; i < depthGlobal; ++i)
@@ -167,7 +193,7 @@ void GPU_call_cuda_queens(short size, int initial_depth, unsigned int n_explorer
     
 	unsigned int *vector_of_tree_size_h, unsigned int *sols_h, int gpu_id){
     cudaSetDevice(gpu_id);
-   // cudaFuncSetCacheConfig(BP_queens_root_dfs,cudaFuncCachePreferL1);
+    //cudaFuncSetCacheConfig(BP_queens_root_dfs,cudaFuncCachePreferL1);
    
 
     unsigned int *vector_of_tree_size_d;
@@ -183,7 +209,7 @@ void GPU_call_cuda_queens(short size, int initial_depth, unsigned int n_explorer
     //I Think this is not possible in Chapel. It must be internal
     cudaMemcpy(root_prefixes_d, root_prefixes_h, n_explorers * sizeof(QueenRoot), cudaMemcpyHostToDevice);
 
-    //printf("\n### Regular BP-DFS search. ###\n");
+    printf("\n### Regular BP-DFS search. ###\n");
     
     //kernel_start =  rtclock();
     
@@ -216,21 +242,20 @@ unsigned long long get_tree_size(unsigned *subtree_values, unsigned survivors){
      return acumulator;
 }
 
-
 int main(){
 
 
-	short size = 12;
+	short size = 15;
 	int initial_depth = 7;
 
 	unsigned  max_number_prefixes = 75580635;
 	
-	unsigned  *vector_of_tree_size_h = (unsigned*)(sizeof(unsigned) * max_number_prefixes);
-	unsigned  *sols_h = (unsigned*)(sizeof(unsigned) * max_number_prefixes);
-	
-	QueenRoot *active_set_h = (QueenRoot*)(sizeof(QueenRoot)* max_number_prefixes);
+	unsigned  *vector_of_tree_size_h = (unsigned*)malloc(sizeof(unsigned) * max_number_prefixes);
+	unsigned  *sols_h = (unsigned*)malloc(sizeof(unsigned) * max_number_prefixes);
+	QueenRoot *active_set_h = (QueenRoot*)malloc(sizeof(QueenRoot)* max_number_prefixes);
 	
 	unsigned long long tree_size = 0ULL;
+    unsigned long long qtd_sols_global = 0ULL;
   	unsigned long long  initial_tree_size = 0ULL;
   	unsigned long long gpu_tree_size = 0ULL;
 
@@ -240,22 +265,18 @@ int main(){
 
 	
 	printf("\nProblem size: %d \nInitial depth: %d\n", size, initial_depth );
-	
-	qtd_sols_global = get_tree_size(sols_h,n_explorers); //i'm using get_tree_size to make a reduction... not beautiful
-
-  	tree_size = get_tree_size(vector_of_tree_size_h,n_explorers);
-
-  	tree_size+=initial_tree_size;
 
 	GPU_call_cuda_queens(size, initial_depth, n_explorers, active_set_h , vector_of_tree_size_h, sols_h, gpu_id);
   
+    qtd_sols_global = get_tree_size(sols_h,n_explorers); //i'm using get_tree_size to make a reduction... not beautiful
+
+    tree_size = get_tree_size(vector_of_tree_size_h,n_explorers);
+
+    tree_size+=initial_tree_size;
  	gpu_tree_size = tree_size-initial_tree_size;
 
 	printf("\nNumber of sol: %llu\nFinal Tree size: %llu \n\tInitial Tree size: %llu \n\tGPU Tree size: %llu\n\t", qtd_sols_global, tree_size, initial_tree_size, gpu_tree_size );
 	
-
-
-
 	
 
 	return 0;
