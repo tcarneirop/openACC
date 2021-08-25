@@ -150,7 +150,7 @@ __global__ void BP_queens_root_dfs(int N, unsigned int nPreFixos, int depthPreFi
 
         flag = root_prefixes[idx].flag;
 
-        #pragma unroll 2
+   
         for (i = 0; i < depthGlobal; ++i)
             vertice[i] = root_prefixes[idx].board[i];
 
